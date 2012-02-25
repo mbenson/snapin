@@ -26,7 +26,11 @@
   <artifactId>snapin</artifactId>
   <version>1.0-SNAPSHOT</version>
   <name>snapin</name>
-  <url>http://maven.apache.org</url>
+  <description>Implements a pattern whereby abstract classes
+    are defined that implement a given interface, thus giving the
+    implementation of the abstract method direct access to the
+    interface methods, resulting in less verbose code.
+  </description>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
