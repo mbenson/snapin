@@ -29,7 +29,7 @@ import java.lang.annotation.Target;
  * temporary mixin.
  * 
  * The hosting template should be {@code abstract}; it is further considered a
- * best practice to define the template with package- scope access.
+ * best practice to define the template with package-scope access.
  * 
  * The generated snap-in class will be {@code public abstract} and will live in
  * the same package as the hosting class. It will clone any type parameters from
