@@ -53,11 +53,11 @@ public @interface Snapin {
      * @return String
      */
     String value();
-
+    
     /**
-     * Optional {@link Commentary}.
+     * Optional {@link Doc}.
      * 
-     * @return Commentary
+     * @return Doc
      */
     Doc doc() default @Doc(value = {});
 
