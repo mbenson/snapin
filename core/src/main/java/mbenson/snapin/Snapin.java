@@ -21,34 +21,28 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation to trigger processing of a {@link SnapinTemplate} and define a
- * snap-in. This is an abstract class defining template methods that should be
- * given the opportunity to make calls against a "snapped in" implementation of
- * a given interface as though the methods called belonged to the snap-in
- * itself. A good way to think of this pattern is as a structure for managing a
- * temporary mixin.
+ * Annotation to trigger processing of a {@link SnapinTemplate} and define a snap-in. This is an abstract class defining
+ * template methods that should be given the opportunity to make calls against a "snapped in" implementation of a given
+ * interface as though the methods called belonged to the snap-in itself. A good way to think of this pattern is as a
+ * structure for managing a temporary mixin.
  *
- * The hosting template should be {@code abstract}; it is further considered a
- * best practice to define the template with package-scope access.
- * 
- * The generated snap-in class will be {@code public abstract} and will live in
- * the same package as the hosting class. It will clone any type parameters from
- * the template, and implement the interface specified by {@link SnapinTemplate}
- * type parameter {@code T}, forwarding all calls to a {@code private} variable
- * {@code snapin} of the interface type.
+ * The hosting template should be {@code abstract}; it is further considered a best practice to define the template with
+ * package-scope access.
  *
- * For every {@code protected abstract} (template) method defined on the hosting
- * class, a package-access {@code final synchronized} method will be defined
- * prepending an argument of the interface type which will invoke the template
- * method using the first argument as the snap-in. These methods may then be
- * invoked as desired.
+ * The generated snap-in class will be {@code public abstract} and will live in the same package as the hosting class.
+ * It will clone any type parameters from the template, and implement the interface specified by {@link SnapinTemplate}
+ * type parameter {@code T}, forwarding all calls to a {@code private} variable {@code snapin} of the interface type.
+ *
+ * For every {@code protected abstract} (template) method defined on the hosting class, a package-access
+ * {@code final synchronized} method will be defined prepending an argument of the interface type which will invoke the
+ * template method using the first argument as the snap-in. These methods may then be invoked as desired.
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
 public @interface Snapin {
+
     /**
-     * Defines a valid simple snap-in classname to be defined in the package
-     * where the template is found.
+     * Defines a valid simple snap-in classname to be defined in the package where the template is found.
      *
      * @return String
      */
@@ -64,19 +58,15 @@ public @interface Snapin {
     /**
      * Documentation.
      */
+    @Target({ ElementType.TYPE, ElementType.METHOD, ElementType.PARAMETER, ElementType.TYPE_PARAMETER })
     public @interface Doc {
+
         /**
          * Each element is a line.
          *
          * @return String[]
          */
         String[] value();
-
-        static class Optional {
-            static String[] valueOf(Doc doc) {
-                return doc == null ? null : doc.value();
-            }
-        }
     }
 
 }

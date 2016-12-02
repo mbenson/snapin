@@ -19,16 +19,15 @@ import mbenson.snapin.Snapin;
 import mbenson.snapin.Snapin.Doc;
 import mbenson.snapin.SnapinTemplate;
 
-@Snapin(value = "ExampleSnapin", doc = @Doc({ "This is an example snapin.", "It's great.",
-    "@param <T> type of blah blah blah" }))
-abstract class ExampleSnapinTemplate<T> implements SnapinTemplate<Example> {
+@Snapin(value = "ExampleSnapin", doc = @Doc({ "This is an example snapin.", "It's great." }))
+abstract class ExampleSnapinTemplate<@Doc("type of blah blah blah") T> implements SnapinTemplate<Example> {
 
     @Doc("foo")
     protected abstract void foo(@Doc("is pronounced 'tee'") T t);
 
     @Doc("bar")
-    protected abstract <X> void bar(@Doc("is pronounced 'eks'") X x) throws Exception;
+    protected abstract <@Doc("generic argument type") X> void bar(@Doc("is pronounced 'eks'") X x) throws Exception;
 
     @Doc("baz")
-    protected abstract <Y> Y baz(@Doc("is pronounced 'ess'") String s);
+    protected abstract <@Doc("generic argument type") Y> Y baz(@Doc("is pronounced 'ess'") String s);
 }

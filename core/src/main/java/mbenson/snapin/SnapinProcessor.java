@@ -20,12 +20,14 @@ import static com.sun.codemodel.JExpr._null;
 import static com.sun.codemodel.JOp.eq;
 
 import java.util.ArrayList;
+import java.util.Optional;
 import java.util.Set;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.annotation.processing.SupportedSourceVersion;
+import javax.lang.model.AnnotatedConstruct;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -38,11 +40,6 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 
-import mbenson.annotationprocessing.CodeModelProcessorBase;
-import mbenson.annotationprocessing.util.CodeModel;
-import mbenson.annotationprocessing.util.LangModel;
-import mbenson.snapin.Snapin.Doc;
-
 import org.apache.commons.lang3.StringUtils;
 
 import com.sun.codemodel.JBlock;
@@ -50,7 +47,6 @@ import com.sun.codemodel.JClass;
 import com.sun.codemodel.JCodeModel;
 import com.sun.codemodel.JDefinedClass;
 import com.sun.codemodel.JExpr;
-import com.sun.codemodel.JExpression;
 import com.sun.codemodel.JFieldRef;
 import com.sun.codemodel.JFieldVar;
 import com.sun.codemodel.JInvocation;
@@ -60,19 +56,28 @@ import com.sun.codemodel.JTryBlock;
 import com.sun.codemodel.JType;
 import com.sun.codemodel.JVar;
 
+import mbenson.annotationprocessing.CodeModelProcessorBase;
+import mbenson.annotationprocessing.util.CodeModel;
+import mbenson.annotationprocessing.util.LangModel;
+import mbenson.snapin.Snapin.Doc;
+
 /**
  * Snapin processor.
  */
 @SupportedAnnotationTypes("mbenson.snapin.Snapin")
 @SupportedSourceVersion(SourceVersion.RELEASE_5)
 public class SnapinProcessor extends CodeModelProcessorBase {
+
+    private static String[] doc(AnnotatedConstruct host) {
+        return Optional.ofNullable(host).map(h -> h.getAnnotation(Doc.class)).map(Doc::value).orElse(null);
+    }
+
     private TypeElement templateInterface;
 
     /**
      * Initialize the processor.
-     * 
-     * @param processingEnv
-     *            environment
+     *
+     * @param processingEnv environment
      */
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -100,15 +105,17 @@ public class SnapinProcessor extends CodeModelProcessorBase {
     }
 
     private class Worker extends CodeModelProcess<TypeElement> {
+
+        private static final String TYPE_PARAMETER_FORMAT = "<%s>";
         private static final String DELEGATE_FIELD_NAME = "delegate";
 
         final Snapin annotation;
         final DeclaredType snapinType;
-        private JClass delegateType;
+        private final JClass delegateType;
 
         /**
          * Create a new Worker instance.
-         * 
+         *
          * @param element
          */
         Worker(TypeElement element, JCodeModel codeModel) {
@@ -121,13 +128,11 @@ public class SnapinProcessor extends CodeModelProcessorBase {
             validate(annotation != null, "Cannot find Snapin annotation on %s; thus how did we even start processing?",
                 element);
 
-            validate(
-                LangModel
-                    .filterByModifier(ElementFilter.methodsIn(element.getEnclosedElements()), Modifier.ABSTRACT,
-                        Modifier.PROTECTED).iterator().hasNext(), "found no template methods in %s", element);
+            validate(LangModel.filterByModifier(ElementFilter.methodsIn(element.getEnclosedElements()),
+                Modifier.ABSTRACT, Modifier.PROTECTED).iterator().hasNext(), "found no template methods in %s",
+                element);
 
-            TypeMirror _snapinType;
-            _snapinType = getSnapinType(element);
+            final TypeMirror _snapinType = getSnapinType(element);
             validate(_snapinType != null, "Unable to discover snapin type for %s", element);
             validate(_snapinType.getKind() == TypeKind.DECLARED, "Unexpected snapin type %s", _snapinType);
             snapinType = (DeclaredType) _snapinType;
@@ -141,9 +146,9 @@ public class SnapinProcessor extends CodeModelProcessorBase {
          */
         @Override
         protected void processImpl() {
+            final String pkg = elements().getPackageOf(element).toString();
+            final String simple = annotation.value();
             final JDefinedClass snapin;
-            String pkg = elements().getPackageOf(element).toString();
-            String simple = annotation.value();
             try {
                 snapin = codeModel._package(pkg)._class(JMod.PUBLIC | JMod.ABSTRACT, simple);
             } catch (Exception e) {
@@ -154,6 +159,12 @@ public class SnapinProcessor extends CodeModelProcessorBase {
 
             // apply class-level commentary:
             CodeModel.addTo(snapin.javadoc(), annotation.doc().value());
+
+            // apply type parameter Docs:
+            element.getTypeParameters().forEach(tp -> {
+                CodeModel.addTo(snapin.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
+                    doc(tp));
+            });
 
             snapin.field(JMod.PRIVATE, delegateType, DELEGATE_FIELD_NAME);
 
@@ -172,17 +183,28 @@ public class SnapinProcessor extends CodeModelProcessorBase {
             // copy template method:
             JMethod template =
                 snapin.method(JMod.PROTECTED | JMod.ABSTRACT, rt, templateMethod.getSimpleName().toString());
-            CodeModel.addTo(template.javadoc(), Doc.Optional.valueOf(templateMethod.getAnnotation(Doc.class)));
+            CodeModel.addTo(template.javadoc(), doc(templateMethod));
+
+            // document method type parameters:
+            templateMethod.getTypeParameters().forEach(tp -> {
+                CodeModel.addTo(template.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
+                    doc(tp));
+            });
 
             // create snapin wrapper method:
             JMethod wrapper = snapin.method(JMod.FINAL, rt, templateMethod.getSimpleName().toString());
-            ArrayList<String> paramTypes = new ArrayList<String>();
+            ArrayList<String> paramTypes = new ArrayList<>();
             for (VariableElement p : templateMethod.getParameters()) {
                 paramTypes.add(p.asType().toString());
             }
-            wrapper.javadoc().add(
-                String.format("Call {@link #%s(%s)} using {@code delegate}", templateMethod.getSimpleName(),
-                    StringUtils.join(paramTypes, ',')));
+            wrapper.javadoc().add(String.format("Call {@link #%s(%s)} using {@code delegate}",
+                templateMethod.getSimpleName(), StringUtils.join(paramTypes, ',')));
+
+            // document wrapper method type parameters:
+            templateMethod.getTypeParameters().forEach(tp -> {
+                CodeModel.addTo(wrapper.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
+                    doc(tp));
+            });
 
             LangModel.to(codeModel).copyTo(templateMethod.getTypeParameters(), template, wrapper);
 
@@ -222,11 +244,12 @@ public class SnapinProcessor extends CodeModelProcessorBase {
                 JType t = naiveType(p.asType().toString());
 
                 // add parameter, add javadoc, and add any available commentary:
+                final String[] parameterDocs = doc(p);
                 CodeModel.addTo(template.javadoc().addParam(template.param(mods, t, p.getSimpleName().toString())),
-                    Doc.Optional.valueOf(p.getAnnotation(Doc.class)));
+                    parameterDocs);
                 JVar param = wrapper.param(mods, t, p.getSimpleName().toString());
                 invocation.arg(param);
-                CodeModel.addTo(wrapper.javadoc().addParam(param), Doc.Optional.valueOf(p.getAnnotation(Doc.class)));
+                CodeModel.addTo(wrapper.javadoc().addParam(param), parameterDocs);
             }
 
             if (codeModel.VOID.equals(rt)) {
@@ -249,7 +272,7 @@ public class SnapinProcessor extends CodeModelProcessorBase {
                 impl.body()._if(eq(delegateField, _null()))._then()
                     ._throw(_new(codeModel._ref(IllegalStateException.class)));
 
-                JInvocation invocation = impl.body().invoke((JExpression) delegateField, name);
+                JInvocation invocation = impl.body().invoke(delegateField, name);
                 ArrayList<String> paramTypes = new ArrayList<String>();
                 for (VariableElement p : method.getParameters()) {
                     int mods = LangModel.to(codeModel).translateModifiers(p.getModifiers());
@@ -259,9 +282,8 @@ public class SnapinProcessor extends CodeModelProcessorBase {
                     impl.javadoc().addParam(param);
                     paramTypes.add(t.name());
                 }
-                impl.javadoc().add(
-                    String.format("@see %s#%s(%s)", snapinType.asElement().getSimpleName(), name,
-                        StringUtils.join(paramTypes, ',')));
+                impl.javadoc().add(String.format("@see %s#%s(%s)", snapinType.asElement().getSimpleName(), name,
+                    StringUtils.join(paramTypes, ',')));
             }
         }
 
