@@ -18,20 +18,19 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>mbenson</groupId>
+    <groupId>com.github.mbenson.snapin</groupId>
     <artifactId>snapin-parent</artifactId>
     <version>1.0-SNAPSHOT</version>
   </parent>
   <artifactId>snapin-example</artifactId>
   <name>snapin-example</name>
-  <url>http://maven.apache.org</url>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <annotationGeneratedSources>${project.build.directory}/generated-sources/annotations</annotationGeneratedSources>
   </properties>
   <dependencies>
     <dependency>
-      <groupId>mbenson</groupId>
+      <groupId>com.github.mbenson.snapin</groupId>
       <artifactId>snapin</artifactId>
       <scope>provided</scope>
     </dependency>
@@ -43,8 +42,8 @@
     <dependency>
     	<groupId>org.mockito</groupId>
     	<artifactId>mockito-core</artifactId>
-    	<version>1.9.0</version>
-    	<scope>test</scope>
+    	<version>1.10.19</version>
+   	<scope>test</scope>
     </dependency>
   </dependencies>
   <build>
