@@ -27,16 +27,16 @@ import java.lang.annotation.Target;
  * a given interface as though the methods called belonged to the snap-in
  * itself. A good way to think of this pattern is as a structure for managing a
  * temporary mixin.
- * 
+ *
  * The hosting template should be {@code abstract}; it is further considered a
  * best practice to define the template with package-scope access.
  * 
  * The generated snap-in class will be {@code public abstract} and will live in
  * the same package as the hosting class. It will clone any type parameters from
  * the template, and implement the interface specified by {@link SnapinTemplate}
- * <T>, forwarding all calls to a {@code private} variable {@code snapin} of the
- * interface type.
- * 
+ * type parameter {@code T}, forwarding all calls to a {@code private} variable
+ * {@code snapin} of the interface type.
+ *
  * For every {@code protected abstract} (template) method defined on the hosting
  * class, a package-access {@code final synchronized} method will be defined
  * prepending an argument of the interface type which will invoke the template
@@ -49,14 +49,14 @@ public @interface Snapin {
     /**
      * Defines a valid simple snap-in classname to be defined in the package
      * where the template is found.
-     * 
+     *
      * @return String
      */
     String value();
-    
+
     /**
      * Optional {@link Doc}.
-     * 
+     *
      * @return Doc
      */
     Doc doc() default @Doc(value = {});
@@ -67,7 +67,7 @@ public @interface Snapin {
     public @interface Doc {
         /**
          * Each element is a line.
-         * 
+         *
          * @return String[]
          */
         String[] value();
