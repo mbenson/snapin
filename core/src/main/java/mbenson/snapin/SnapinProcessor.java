@@ -15,13 +15,21 @@
  */
 package mbenson.snapin;
 
-import static com.sun.codemodel.JExpr._new;
-import static com.sun.codemodel.JExpr._null;
-import static com.sun.codemodel.JOp.eq;
+import static com.helger.jcodemodel.JExpr._new;
+import static com.helger.jcodemodel.JExpr._null;
+import static com.helger.jcodemodel.JExpr._this;
+import static com.helger.jcodemodel.JOp.eq;
 
-import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -34,32 +42,41 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.Validate;
 
-import com.sun.codemodel.JBlock;
-import com.sun.codemodel.JClass;
-import com.sun.codemodel.JCodeModel;
-import com.sun.codemodel.JDefinedClass;
-import com.sun.codemodel.JExpr;
-import com.sun.codemodel.JFieldRef;
-import com.sun.codemodel.JFieldVar;
-import com.sun.codemodel.JInvocation;
-import com.sun.codemodel.JMethod;
-import com.sun.codemodel.JMod;
-import com.sun.codemodel.JTryBlock;
-import com.sun.codemodel.JType;
-import com.sun.codemodel.JVar;
+import com.helger.jcodemodel.AbstractJClass;
+import com.helger.jcodemodel.AbstractJType;
+import com.helger.jcodemodel.IJExpression;
+import com.helger.jcodemodel.JBlock;
+import com.helger.jcodemodel.JCodeModel;
+import com.helger.jcodemodel.JDefinedClass;
+import com.helger.jcodemodel.JDocComment;
+import com.helger.jcodemodel.JExpr;
+import com.helger.jcodemodel.JFieldRef;
+import com.helger.jcodemodel.JFieldVar;
+import com.helger.jcodemodel.JInvocation;
+import com.helger.jcodemodel.JMethod;
+import com.helger.jcodemodel.JMod;
+import com.helger.jcodemodel.JTryBlock;
+import com.helger.jcodemodel.JTypeVar;
+import com.helger.jcodemodel.JVar;
+import com.helger.jcodemodel.meta.CodeModelBuildingException;
+import com.helger.jcodemodel.meta.ErrorTypeFound;
 
 import mbenson.annotationprocessing.CodeModelProcessorBase;
-import mbenson.annotationprocessing.util.CodeModel;
 import mbenson.annotationprocessing.util.LangModel;
 import mbenson.snapin.Snapin.Doc;
+import mbenson.snapin.Snapin.DocThrow;
 
 /**
  * Snapin processor.
@@ -68,8 +85,10 @@ import mbenson.snapin.Snapin.Doc;
 @SupportedSourceVersion(SourceVersion.RELEASE_5)
 public class SnapinProcessor extends CodeModelProcessorBase {
 
-    private static String[] doc(AnnotatedConstruct host) {
-        return Optional.ofNullable(host).map(h -> h.getAnnotation(Doc.class)).map(Doc::value).orElse(null);
+    private static String doc(AnnotatedConstruct host) {
+        final String[] value =
+            Optional.ofNullable(host).map(h -> h.getAnnotation(Doc.class)).map(Doc::value).orElse(null);
+        return ArrayUtils.isEmpty(value) ? null : Stream.of(value).collect(Collectors.joining("\n"));
     }
 
     private TypeElement templateInterface;
@@ -92,14 +111,8 @@ public class SnapinProcessor extends CodeModelProcessorBase {
     protected boolean processTo(JCodeModel codeModel, Set<? extends TypeElement> annotations, RoundEnvironment roundEnv)
         throws Throwable {
         if (annotations != null) {
-            for (Element element : roundEnv.getElementsAnnotatedWith(Snapin.class)) {
-                if (element.getKind() != ElementKind.CLASS) {
-                    continue;
-                }
-                final TypeElement type = (TypeElement) element;
-                Worker worker = new Worker(type, codeModel);
-                worker.process();
-            }
+            roundEnv.getElementsAnnotatedWith(Snapin.class).stream().filter(e -> e.getKind() == ElementKind.CLASS)
+                .map(e -> new Worker((TypeElement) e, codeModel)).forEach(Worker::process);
         }
         return true;
     }
@@ -111,7 +124,8 @@ public class SnapinProcessor extends CodeModelProcessorBase {
 
         final Snapin annotation;
         final DeclaredType snapinType;
-        private final JClass delegateType;
+        final JDefinedClass snapin;
+        final AbstractJClass delegateType;
 
         /**
          * Create a new Worker instance.
@@ -135,10 +149,26 @@ public class SnapinProcessor extends CodeModelProcessorBase {
             final TypeMirror _snapinType = getSnapinType(element);
             validate(_snapinType != null, "Unable to discover snapin type for %s", element);
             validate(_snapinType.getKind() == TypeKind.DECLARED, "Unexpected snapin type %s", _snapinType);
-            snapinType = (DeclaredType) _snapinType;
-            validate(snapinType.asElement().getKind() == ElementKind.INTERFACE, "Non-interface snapin type %s found",
-                snapinType);
-            delegateType = naiveType(snapinType.toString());
+            snapinType = DeclaredType.class.cast(_snapinType);
+
+            final String pkg = elements().getPackageOf(element).toString();
+            final String simple = Validate.notBlank(annotation.value(), "Snapin basename was blank");
+
+            try {
+                snapin = codeModel._package(pkg)._class(JMod.PUBLIC | JMod.ABSTRACT, simple);
+            } catch (Exception e) {
+                error(e, "Unable to define class %s.%s:", pkg, simple);
+                throw new IllegalStateException(e);
+            }
+            LangModel.to(codeModel).copyTo(element.getTypeParameters(), snapin);
+
+            try {
+                delegateType =
+                    represent(snapinType, Collections.singletonMap(element.getQualifiedName().toString(), snapin));
+            } catch (Exception e) {
+                error(e, "Unable to get code model for %s", snapinType);
+                throw new IllegalStateException(e);
+            }
         }
 
         /**
@@ -146,24 +176,12 @@ public class SnapinProcessor extends CodeModelProcessorBase {
          */
         @Override
         protected void processImpl() {
-            final String pkg = elements().getPackageOf(element).toString();
-            final String simple = annotation.value();
-            final JDefinedClass snapin;
-            try {
-                snapin = codeModel._package(pkg)._class(JMod.PUBLIC | JMod.ABSTRACT, simple);
-            } catch (Exception e) {
-                error(e, "Unable to define class %s.%s:", pkg, simple);
-                return;
-            }
-            LangModel.to(codeModel).copyTo(element.getTypeParameters(), snapin);
-
             // apply class-level commentary:
-            CodeModel.addTo(snapin.javadoc(), annotation.doc().value());
+            snapin.javadoc().add(doc(element));
 
             // apply type parameter Docs:
             element.getTypeParameters().forEach(tp -> {
-                CodeModel.addTo(snapin.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
-                    doc(tp));
+                snapin.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())).add(doc(tp));
             });
 
             snapin.field(JMod.PRIVATE, delegateType, DELEGATE_FIELD_NAME);
@@ -177,48 +195,48 @@ public class SnapinProcessor extends CodeModelProcessorBase {
         }
 
         private void addTo(JDefinedClass snapin, ExecutableElement templateMethod) {
-            final JFieldRef delegateField = JExpr.ref(JExpr._this(), DELEGATE_FIELD_NAME);
+            final JFieldRef delegateField = JExpr.ref(_this(), DELEGATE_FIELD_NAME);
 
-            JType rt = naiveType(templateMethod.getReturnType().toString());
+            final AbstractJType rt = naiveType(templateMethod.getReturnType().toString());
             // copy template method:
-            JMethod template =
+            final JMethod template =
                 snapin.method(JMod.PROTECTED | JMod.ABSTRACT, rt, templateMethod.getSimpleName().toString());
-            CodeModel.addTo(template.javadoc(), doc(templateMethod));
-
-            // document method type parameters:
-            templateMethod.getTypeParameters().forEach(tp -> {
-                CodeModel.addTo(template.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
-                    doc(tp));
-            });
-
-            // create snapin wrapper method:
-            JMethod wrapper = snapin.method(JMod.FINAL, rt, templateMethod.getSimpleName().toString());
-            ArrayList<String> paramTypes = new ArrayList<>();
-            for (VariableElement p : templateMethod.getParameters()) {
-                paramTypes.add(p.asType().toString());
+            template.javadoc().add(doc(templateMethod));
+            if (codeModel.VOID != rt) {
+                template.javadoc().addReturn().add(rt);
             }
-            wrapper.javadoc().add(String.format("Call {@link #%s(%s)} using {@code delegate}",
-                templateMethod.getSimpleName(), StringUtils.join(paramTypes, ',')));
+            // create snapin wrapper method:
+            final JMethod wrapper = snapin.method(JMod.FINAL, rt, templateMethod.getSimpleName().toString());
 
-            // document wrapper method type parameters:
-            templateMethod.getTypeParameters().forEach(tp -> {
-                CodeModel.addTo(wrapper.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())),
-                    doc(tp));
-            });
+            final List<? extends VariableElement> methodParameters = templateMethod.getParameters();
+            final String paramTypes = methodParameters.stream().map(VariableElement::asType).map(Object::toString)
+                .collect(Collectors.joining(","));
+
+            wrapper.javadoc().append(String.format("Call {@link #%s(%s)} using {@code delegate}",
+                templateMethod.getSimpleName(), paramTypes)).addReturn().add(rt);
 
             LangModel.to(codeModel).copyTo(templateMethod.getTypeParameters(), template, wrapper);
 
-            // add delegate param to wrapper method:
-            JVar delegateParam = wrapper.param(delegateType, DELEGATE_FIELD_NAME);
-            wrapper.javadoc().addParam(delegateParam).add(delegateType);
+            // document method type parameters:
+            templateMethod.getTypeParameters().forEach(tp -> Stream.of(template, wrapper).forEach(m -> {
+                m.javadoc().addParam(String.format(TYPE_PARAMETER_FORMAT, tp.getSimpleName())).add(doc(tp));
+            }));
 
-            for (TypeMirror e : templateMethod.getThrownTypes()) {
-                JClass exType = naiveType(e.toString());
-                template._throws(exType);
-                template.javadoc().addThrows(exType);
-                wrapper._throws(exType);
-                wrapper.javadoc().addThrows(exType);
-            }
+            // add delegate param to wrapper method:
+            final JVar delegateParam = wrapper.param(delegateType, DELEGATE_FIELD_NAME);
+            wrapper.javadoc().addParam(delegateParam).append(delegateType).add("delegate");
+
+            final Map<String, String[]> docThrows = Stream.of(templateMethod.getAnnotationsByType(DocThrow.class))
+                .collect(Collectors.toMap(dt -> getClassName(dt, DocThrow::type), DocThrow::value));
+
+            templateMethod.getThrownTypes().stream().map(Object::toString).<AbstractJClass> map(this::naiveType)
+                .forEach(twn -> {
+                    final String[] doc = docThrows.get(twn.fullName());
+                    Stream.of(template, wrapper).peek(method -> method._throws(twn)).map(JMethod::javadoc)
+                        .forEach(javadoc -> {
+                            javadoc.addThrows(twn).add(doc);
+                        });
+                });
 
             // define wrapper method body:
             JBlock block = wrapper.body();
@@ -227,79 +245,270 @@ public class SnapinProcessor extends CodeModelProcessorBase {
             block._if(eq(delegateParam, _null()))._then()._throw(_new(codeModel._ref(NullPointerException.class)));
 
             // enter synchronized block:
-            block.directStatement("synchronized (this)");
-            block = CodeModel.addTo(block, new JBlock(true, true));
+            block = block.synchronizedBlock(_this()).body();
 
             // next, assign:
             block = block.assign(delegateField, delegateParam);
 
             // try to defer to original
-            JTryBlock tryBlock = block._try();
+            final JTryBlock tryBlock = block._try();
             block = tryBlock.body();
-            JInvocation invocation = JExpr.invoke(template);
+            final JInvocation invocation = JExpr.invoke(template);
 
+            int index = 0;
             // handle params, sending from wrapper to original
-            for (VariableElement p : templateMethod.getParameters()) {
-                int mods = LangModel.to(codeModel).translateModifiers(p.getModifiers());
-                JType t = naiveType(p.asType().toString());
+            for (VariableElement p : methodParameters) {
+                final boolean varParam = ++index == methodParameters.size() && templateMethod.isVarArgs();
+                final int mods = LangModel.encodeModifiers(p.getModifiers());
+                final AbstractJType t = naiveType(p.asType().toString());
 
-                // add parameter, add javadoc, and add any available commentary:
-                final String[] parameterDocs = doc(p);
-                CodeModel.addTo(template.javadoc().addParam(template.param(mods, t, p.getSimpleName().toString())),
-                    parameterDocs);
-                JVar param = wrapper.param(mods, t, p.getSimpleName().toString());
-                invocation.arg(param);
-                CodeModel.addTo(wrapper.javadoc().addParam(param), parameterDocs);
-            }
+                final String parameterDocs = doc(p);
+                final String paramName = p.getSimpleName().toString();
 
-            if (codeModel.VOID.equals(rt)) {
-                block.add(invocation);
-            } else {
-                block._return(invocation);
+                final JVar templateParam;
+                if (varParam) {
+                    templateParam = template.varParam(mods, t.elementType(), paramName);
+                } else {
+                    templateParam = template.param(mods, t, paramName);
+                }
+                template.javadoc().addParam(templateParam).add(parameterDocs);
+
+                final JVar wrapperParam;
+                if (varParam) {
+                    wrapperParam = wrapper.varParam(mods, t.elementType(), paramName);
+                } else {
+                    wrapperParam = wrapper.param(mods, t, paramName);
+                }
+                wrapper.javadoc().addParam(wrapperParam).add(parameterDocs);
+                invocation.arg(wrapperParam);
             }
+            returnFrom(block, templateMethod.getReturnType(), invocation);
+
             // clear delegate field in finally block:
             tryBlock._finally().assign(delegateField, JExpr._null());
         }
 
         private void implementSnapin(JDefinedClass snapin) {
+            final Element snapinTypeElement = snapinType.asElement();
+
+            final boolean inheritance;
+            if (snapinTypeElement.getKind().isInterface()) {
+                snapin._implements(delegateType);
+                inheritance = true;
+            } else if (isExtensibleClass(snapinTypeElement)) {
+                snapin._extends(delegateType);
+                inheritance = true;
+            } else {
+                inheritance = false;
+            }
+
+            final Map<String, AbstractJClass> delegateTypeArguments = typeArguments(delegateType);
+
             final JFieldVar delegateField = snapin.fields().get(DELEGATE_FIELD_NAME);
-            for (ExecutableElement method : ElementFilter.methodsIn(snapinType.asElement().getEnclosedElements())) {
-                String name = method.getSimpleName().toString();
-                JType rt = naiveType(method.getReturnType().toString());
-                JMethod impl = snapin.method(JMod.PUBLIC | JMod.SYNCHRONIZED | JMod.FINAL, rt, name);
+            for (ExecutableElement method : ElementFilter.methodsIn(snapinTypeElement.getEnclosedElements())) {
+                if (method.getModifiers().contains(Modifier.STATIC)) {
+                    continue;
+                }
+                final String name = method.getSimpleName().toString();
+
+                // the return type may be a mapped type variable, so defer until we can handle it
+                final JMethod impl = snapin.method(JMod.PUBLIC | JMod.SYNCHRONIZED | JMod.FINAL, codeModel.NULL, name);
+
+                final TypeVariableRenamer utv = new TypeVariableRenamer(codeModel,
+                    snapin.typeParamList().stream().map(JTypeVar::name).collect(Collectors.toSet()));
+                LangModel.to(codeModel).copyTo(method.getTypeParameters(), utv);
+
+                final Map<String, AbstractJClass> methodTypeArguments = new HashMap<>(delegateTypeArguments);
+                methodTypeArguments.putAll(utv.copyTo(impl));
+
+                final AbstractJType returnType = resolveVariables(method.getReturnType(), methodTypeArguments);
+                impl.type(returnType);
+                if (codeModel.VOID != returnType) {
+                    impl.javadoc().addReturn().add(returnType);
+                }
+                if (inheritance) {
+                    impl.annotate(Override.class);
+                }
+
                 // implement body:
                 // if delegate field == null throw new IllegalStateException:
                 impl.body()._if(eq(delegateField, _null()))._then()
-                    ._throw(_new(codeModel._ref(IllegalStateException.class)));
+                    ._throw(_new(codeModel.ref(IllegalStateException.class)));
 
-                JInvocation invocation = impl.body().invoke(delegateField, name);
-                ArrayList<String> paramTypes = new ArrayList<String>();
-                for (VariableElement p : method.getParameters()) {
-                    int mods = LangModel.to(codeModel).translateModifiers(p.getModifiers());
-                    JType t = naiveType(p.asType().toString());
-                    JVar param = impl.param(mods, t, p.getSimpleName().toString());
+                final JInvocation invocation = JExpr.invoke(delegateField, name);
+
+                final List<? extends VariableElement> methodParameters = method.getParameters();
+
+                int index = 0;
+                for (VariableElement p : methodParameters) {
+                    final boolean varParam = ++index == methodParameters.size() && method.isVarArgs();
+                    final int mods = LangModel.encodeModifiers(p.getModifiers());
+                    final AbstractJType t = resolveVariables(p.asType(), methodTypeArguments);
+                    final String paramName = p.getSimpleName().toString();
+
+                    final JVar param;
+                    if (varParam) {
+                        param = impl.varParam(mods, t.elementType(), paramName);
+                    } else {
+                        param = impl.param(mods, t, paramName);
+                    }
                     invocation.arg(param);
-                    impl.javadoc().addParam(param);
-                    paramTypes.add(t.name());
+                    impl.javadoc().addParam(param).add("see interface");
                 }
-                impl.javadoc().add(String.format("@see %s#%s(%s)", snapinType.asElement().getSimpleName(), name,
-                    StringUtils.join(paramTypes, ',')));
+
+                returnFrom(impl.body(), method.getReturnType(), invocation);
+
+                if (inheritance) {
+                    impl.javadoc().add("{@inheritDoc}");
+                }
+                impl.javadoc().addTag(JDocComment.TAG_SEE)
+                    .add(String.format("%s#%s(%s)", delegateType.erasure().name(), name,
+                        impl.params().stream().map(JVar::type).map(this::seeParameter).map(AbstractJType::name)
+                            .collect(Collectors.joining(", "))));
+
+                method.getThrownTypes().stream().map(Object::toString).<AbstractJClass> map(this::naiveType)
+                    .forEach(((Consumer<AbstractJClass>) impl::_throws).andThen(twn -> {
+                        impl.javadoc().addThrows(twn).add("see interface");
+                    }));
             }
         }
 
+        private AbstractJType seeParameter(AbstractJType type) {
+            if (type.isArray()) {
+                return seeParameter(type.elementType()).array();
+            }
+            if (type instanceof JTypeVar) {
+                return seeParameter(((JTypeVar) type)._extends());
+            }
+            return type.erasure();
+        }
+
+        private AbstractJClass represent(TypeMirror type, Map<String, AbstractJClass> variableMappingTypes)
+            throws ErrorTypeFound, CodeModelBuildingException {
+            switch (type.getKind()) {
+            case DECLARED:
+                final DeclaredType declaredType = DeclaredType.class.cast(type);
+
+                AbstractJClass result =
+                    codeModel.refWithErrorTypes(TypeElement.class.cast(declaredType.asElement()), elements());
+
+                for (TypeMirror arg : declaredType.getTypeArguments()) {
+                    result = result.narrow(represent(arg, variableMappingTypes));
+                }
+                return result;
+            case TYPEVAR:
+                final TypeVariable tv = TypeVariable.class.cast(type);
+
+                final TypeParameterElement typeParameter = TypeParameterElement.class.cast(tv.asElement());
+                final String genericElementName =
+                    TypeElement.class.cast(typeParameter.getGenericElement()).getQualifiedName().toString();
+
+                if (variableMappingTypes.containsKey(genericElementName)) {
+
+                    final Optional<JTypeVar> var = Stream.of(variableMappingTypes.get(genericElementName).typeParams())
+                        .filter(tp -> typeParameter.getSimpleName().contentEquals(tp.name())).findFirst();
+
+                    if (var.isPresent()) {
+                        return var.get();
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+            return naiveType(type.toString());
+        }
+
+        private boolean isExtensibleClass(Element snapinTypeElement) {
+            if (snapinTypeElement.getKind() == ElementKind.CLASS) {
+                if (!snapinTypeElement.getModifiers().contains(Modifier.FINAL)) {
+                    return ElementFilter.constructorsIn(snapinTypeElement.getEnclosedElements()).stream()
+                        .filter(this::isExtensibleCtor).findFirst().isPresent();
+                }
+            }
+            return false;
+        }
+
+        private boolean isExtensibleCtor(ExecutableElement ctor) {
+            if ((ctor.getKind() == ElementKind.CONSTRUCTOR) && ctor.getParameters().isEmpty()) {
+                final Set<Modifier> mods = ctor.getModifiers();
+                if (mods.contains(Modifier.PUBLIC) || mods.contains(Modifier.PROTECTED)) {
+                    return true;
+                }
+                if (!mods.contains(Modifier.PRIVATE)) {
+                    return elements().getPackageOf(ctor).equals(elements().getPackageOf(element));
+                }
+            }
+            return false;
+        }
+
+        private void returnFrom(JBlock block, TypeMirror resultType, IJExpression expr) {
+            if (resultType.getKind() == TypeKind.VOID) {
+                block.add((JInvocation) expr);
+                block._return();
+            } else {
+                block._return(expr);
+            }
+        }
+
+        private Map<String, AbstractJClass> typeArguments(AbstractJClass type) {
+
+            final JTypeVar[] typeParams = type.erasure().typeParams();
+            final List<? extends AbstractJClass> typeArguments = type.getTypeParameters();
+
+            final Map<String, AbstractJClass> result = new LinkedHashMap<>();
+            for (int i = 0; (i < typeParams.length) && (i < typeArguments.size()); i++) {
+                result.put(typeParams[i].name(), typeArguments.get(i));
+            }
+            return result;
+        }
+
+        @SuppressWarnings("unchecked")
+        private <T extends AbstractJType> T resolveVariables(TypeMirror type,
+            Map<String, ? extends AbstractJClass> typeMappings) {
+            switch (type.getKind()) {
+            case TYPEVAR:
+                return (T) typeMappings.get(TypeVariable.class.cast(type).asElement().getSimpleName().toString());
+
+            case WILDCARD:
+                final WildcardType wild = WildcardType.class.cast(type);
+                final TypeMirror xBound = wild.getExtendsBound();
+
+                if (xBound != null) {
+                    return (T) this.<AbstractJClass> resolveVariables(xBound, typeMappings).wildcard();
+                }
+                final TypeMirror sBound = wild.getSuperBound();
+                if (sBound != null) {
+                    return (T) this.<AbstractJClass> resolveVariables(sBound, typeMappings).wildcardSuper();
+                }
+                return (T) codeModel.wildcard();
+
+            case DECLARED:
+                final DeclaredType declaredType = DeclaredType.class.cast(type);
+
+                try {
+                    AbstractJClass result =
+                        codeModel.refWithErrorTypes(TypeElement.class.cast(declaredType.asElement()), elements());
+
+                    for (TypeMirror arg : declaredType.getTypeArguments()) {
+                        result = result.narrow(this.<AbstractJType> resolveVariables(arg, typeMappings));
+                    }
+                    return (T) result;
+                } catch (CodeModelBuildingException ex) {
+                    // fall through:
+                }
+            default:
+                return naiveType(type.toString());
+            }
+        }
     }
 
     private TypeMirror getSnapinType(TypeElement templateType) {
-        for (TypeMirror iface : templateType.getInterfaces()) {
-            if (iface.getKind() == TypeKind.DECLARED) {
-                DeclaredType declared = (DeclaredType) iface;
-                TypeElement rawType = (TypeElement) declared.asElement();
-                if (rawType.getQualifiedName().equals(templateInterface.getQualifiedName())) {
-                    return declared.getTypeArguments().iterator().next();
-                }
-            }
-        }
-        return null;
+        return templateType.getInterfaces().stream().filter(iface -> iface.getKind() == TypeKind.DECLARED)
+            .map(DeclaredType.class::cast)
+            .filter(declared -> templateInterface.getQualifiedName()
+                .equals(((TypeElement) declared.asElement()).getQualifiedName()))
+            .map(DeclaredType::getTypeArguments).flatMap(List::stream).findFirst().orElse(null);
     }
 
 }

@@ -16,6 +16,7 @@
 package mbenson.snapin;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -49,13 +50,6 @@ public @interface Snapin {
     String value();
 
     /**
-     * Optional {@link Doc}.
-     *
-     * @return Doc
-     */
-    Doc doc() default @Doc(value = {});
-
-    /**
      * Documentation.
      */
     @Target({ ElementType.TYPE, ElementType.METHOD, ElementType.PARAMETER, ElementType.TYPE_PARAMETER })
@@ -69,4 +63,32 @@ public @interface Snapin {
         String[] value();
     }
 
+    /**
+     * {@link DocThrow} container annotation.
+     */
+    @Target(ElementType.METHOD)
+    public @interface DocThrows {
+        DocThrow[] value();
+    }
+
+    /**
+     * Permits documentation of a thrown type.
+     */
+    @Target(ElementType.METHOD)
+    @Repeatable(DocThrows.class)
+    public @interface DocThrow {
+        /**
+         * The thrown type.
+         *
+         * @return {@link Throwable} subclass
+         */
+        Class<? extends Throwable> type();
+
+        /**
+         * Each element is a line.
+         *
+         * @return String[]
+         */
+        String[] value();
+    }
 }

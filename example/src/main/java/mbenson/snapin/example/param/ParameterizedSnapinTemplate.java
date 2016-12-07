@@ -13,24 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package mbenson.snapin.example;
+package mbenson.snapin.example.param;
+
+import java.util.List;
 
 import mbenson.snapin.Snapin;
 import mbenson.snapin.Snapin.Doc;
-import mbenson.snapin.Snapin.DocThrow;
 import mbenson.snapin.SnapinTemplate;
 
-@Snapin("ExampleSnapin")
-@Doc({ "This is an example snapin.", "It's great." })
-abstract class ExampleSnapinTemplate<@Doc("type of blah blah blah") T> implements SnapinTemplate<Example> {
+@Snapin("ParameterizedSnapin")
+@Doc("snapin for Parameterized")
+abstract class ParameterizedSnapinTemplate<@Doc("P") P, @Doc("Q") Q>
+    implements SnapinTemplate<Parameterized<P, List<Q>>> {
 
     @Doc("foo")
-    protected abstract void foo(@Doc("is pronounced 'tee'") T t);
+    protected abstract P foo(@Doc("p") P p);
 
     @Doc("bar")
-    @DocThrow(type = Exception.class, value = "when something goes wrong")
-    protected abstract <@Doc("generic argument type") X> void bar(@Doc("is pronounced 'eks'") X x) throws Exception;
+    protected abstract P bar(@Doc("bar") P bar);
 
-    @Doc("baz")
-    protected abstract <@Doc("generic argument type") Y> Y baz(@Doc("is pronounced 'ess'") String... s);
 }

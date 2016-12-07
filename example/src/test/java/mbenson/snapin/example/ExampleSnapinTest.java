@@ -27,9 +27,9 @@ public class ExampleSnapinTest {
     private Example example;
     private ExampleSnapin<Integer> snapin;
     private ExampleUsage<Integer, Boolean> usage;
-    private Integer fooArg = Integer.valueOf(666);
-    private Boolean barArg = Boolean.TRUE;
-    private String bazArg = "bazArg";
+    private final Integer fooArg = Integer.valueOf(666);
+    private final Boolean barArg = Boolean.TRUE;
+    private final String[] bazArg = { "bazArg" };
 
     @Before
     public void setup() {
@@ -48,7 +48,7 @@ public class ExampleSnapinTest {
             }
 
             @Override
-            protected <Y> Y baz(String s) {
+            protected <Y> Y baz(String... s) {
                 call("baz", s);
                 return null;
             }

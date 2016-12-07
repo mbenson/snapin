@@ -34,17 +34,17 @@
   </properties>
   <dependencies>
     <dependency>
-        <groupId>org.apache.commons</groupId>
-        <artifactId>commons-lang3</artifactId>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
     </dependency>
     <dependency>
-        <groupId>com.sun.codemodel</groupId>
-        <artifactId>codemodel</artifactId>
+      <groupId>com.helger</groupId>
+      <artifactId>jcodemodel</artifactId>
     </dependency>
     <dependency>
-    	<groupId>com.github.mbenson</groupId>
-    	<artifactId>annotation-processing-support</artifactId>
-    	<version>1.0-SNAPSHOT</version>
+      <groupId>com.github.mbenson</groupId>
+      <artifactId>annotation-processing-support</artifactId>
+      <version>1.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
   <build>

@@ -19,9 +19,9 @@ public class ExampleUsage<T, BAR_ARG> {
     private final Example example;
     private final T fooArg;
     private final BAR_ARG barArg;
-    private final String bazArg;
+    private final String[] bazArg;
 
-    public ExampleUsage(Example example, T fooArg, BAR_ARG barArg, String bazArg) {
+    public ExampleUsage(Example example, T fooArg, BAR_ARG barArg, String... bazArg) {
         super();
         this.example = example;
         this.fooArg = fooArg;
