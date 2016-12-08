@@ -13,7 +13,10 @@ import com.helger.jcodemodel.IJGenerifiable;
 import com.helger.jcodemodel.JCodeModel;
 import com.helger.jcodemodel.JTypeVar;
 
-public class TypeVariableRenamer extends AbstractJGenerifiableImpl {
+/**
+ * Temporary holder for type variables which can then copy these to another {@link IJGenerifiable}.
+ */
+class TypeVariableRenamer extends AbstractJGenerifiableImpl {
     private final JCodeModel owner;
     private final Set<String> typeVariableNames;
     private final UnaryOperator<String> typeVariableRenamer;
@@ -39,6 +42,11 @@ public class TypeVariableRenamer extends AbstractJGenerifiableImpl {
         return owner;
     }
 
+    /**
+     * Copy declared type variables to {@code target}.
+     * @param target {@link IJGenerifiable}
+     * @return {@link Map} of original variable name to resulting {@link JTypeVar}.
+     */
     public Map<String, JTypeVar> copyTo(IJGenerifiable target) {
         final Set<String> usedVariableNames = new HashSet<>(typeVariableNames);
         final Map<String, JTypeVar> result = new HashMap<>();

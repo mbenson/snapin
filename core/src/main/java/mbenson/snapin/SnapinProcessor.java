@@ -79,7 +79,7 @@ import mbenson.snapin.Snapin.Doc;
 import mbenson.snapin.Snapin.DocThrow;
 
 /**
- * Snapin processor.
+ * {@link Snapin} annotation processor.
  */
 @SupportedAnnotationTypes("mbenson.snapin.Snapin")
 @SupportedSourceVersion(SourceVersion.RELEASE_5)
