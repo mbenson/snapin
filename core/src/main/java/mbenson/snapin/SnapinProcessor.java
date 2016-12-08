@@ -19,6 +19,7 @@ import static com.helger.jcodemodel.JExpr._new;
 import static com.helger.jcodemodel.JExpr._null;
 import static com.helger.jcodemodel.JExpr._this;
 import static com.helger.jcodemodel.JOp.eq;
+import static com.helger.jcodemodel.JOp.ne;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -206,7 +207,8 @@ public class SnapinProcessor extends CodeModelProcessorBase {
                 template.javadoc().addReturn().add(rt);
             }
             // create snapin wrapper method:
-            final JMethod wrapper = snapin.method(JMod.FINAL, rt, templateMethod.getSimpleName().toString());
+            final JMethod wrapper =
+                snapin.method(JMod.FINAL | JMod.SYNCHRONIZED, rt, templateMethod.getSimpleName().toString());
 
             final List<? extends VariableElement> methodParameters = templateMethod.getParameters();
             final String paramTypes = methodParameters.stream().map(VariableElement::asType).map(Object::toString)
@@ -240,6 +242,10 @@ public class SnapinProcessor extends CodeModelProcessorBase {
 
             // define wrapper method body:
             JBlock block = wrapper.body();
+
+            // if delegateField != null throw new IllegalStateException:
+            block._if(ne(delegateField, _null()))._then()
+                ._throw(_new(codeModel._ref(IllegalStateException.class)).arg("Re-entry not permitted"));
 
             // if delegateParam == null throw new NPE:
             block._if(eq(delegateParam, _null()))._then()._throw(_new(codeModel._ref(NullPointerException.class)));
